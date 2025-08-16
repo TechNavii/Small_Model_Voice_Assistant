@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemma Voice Assistant</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+
+        .status {
+            text-align: center;
+            padding: 10px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .status.idle { background: #f0f0f0; color: #666; }
+        .status.recording { background: #ffebee; color: #c62828; animation: pulse 1.5s infinite; }
+        .status.processing { background: #e3f2fd; color: #1565c0; }
+        .status.speaking { background: #e8f5e9; color: #2e7d32; }
+        .status.listening { background: #fff3e0; color: #e65100; animation: pulse 1.5s infinite; }
+        .status.error { background: #ffcdd2; color: #c62828; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 50px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .record-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .record-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .record-btn.recording {
+            background: linear-gradient(135deg, #f44336 0%, #e91e63 100%);
+        }
+
+        .vad-btn {
+            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+            color: white;
+        }
+
+        .vad-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(255, 152, 0, 0.4);
+        }
+
+        .vad-btn.active {
+            background: linear-gradient(135deg, #f44336 0%, #e91e63 100%);
+        }
+
+        .chat-container {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 2px solid #f0f0f0;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 12px 16px;
+            border-radius: 15px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .user-message {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin-left: auto;
+            max-width: 80%;
+        }
+
+        .ai-message {
+            background: #f5f5f5;
+            color: #333;
+            max-width: 80%;
+        }
+
+        .text-input-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .text-input {
+            flex: 1;
+            padding: 12px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 50px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        .text-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .send-btn {
+            background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+            color: white;
+            padding: 12px 24px;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 12px;
+            border-radius: 10px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .error.show { display: block; }
+
+        .debug-panel {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .vad-info {
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+            margin-top: 10px;
+            min-height: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎙️ Gemma Voice Assistant</h1>
+        
+        <div class="status idle" id="status">Initializing...</div>
+
+        <div class="chat-container" id="chatContainer"></div>
+
+        <div class="text-input-container">
+            <input type="text" class="text-input" id="textInput" placeholder="Type a message...">
+            <button class="send-btn" onclick="sendText()">Send</button>
+        </div>
+
+        <div class="controls">
+            <button class="record-btn" id="recordBtn" onclick="toggleRecording()">
+                <span id="recordIcon">🎤</span>
+                <span id="recordText">Start Recording</span>
+            </button>
+            <button class="vad-btn" id="vadBtn">
+                <span id="vadIcon">🎙️</span>
+                <span id="vadText">Hold to Talk</span>
+            </button>
+        </div>
+        
+        <div class="vad-info" id="vadInfo"></div>
+
+        <div class="error" id="error"></div>
+        
+        <div class="debug-panel" id="debug">
+            <strong>Debug Log:</strong><br>
+            <div id="debugLog"></div>
+        </div>
+    </div>
+
+    <script>
+        let isRecording = false;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let currentAudio = null;
+        
+        // Hold to talk variables
+        let holdToTalkActive = false;
+        let holdToTalkRecorder = null;
+        let holdToTalkStream = null;
+        let holdToTalkChunks = [];
+        let holdToTalkStartTime = null;
+        
+        // Debug logging
+        function log(message) {
+            console.log(message);
+            const debugLog = document.getElementById('debugLog');
+            const time = new Date().toLocaleTimeString();
+            debugLog.innerHTML += `[${time}] ${message}<br>`;
+            debugLog.scrollTop = debugLog.scrollHeight;
+        }
+        
+        // Initialize
+        async function init() {
+            log('Initializing app...');
+            
+            // Check server health
+            try {
+                const response = await fetch('/health');
+                if (response.ok) {
+                    const health = await response.json();
+                    log(`Server health: ${JSON.stringify(health)}`);
+                    updateStatus('idle', 'Ready to chat');
+                } else {
+                    throw new Error('Server health check failed');
+                }
+            } catch (error) {
+                log(`Error: ${error.message}`);
+                updateStatus('error', 'Cannot connect to server');
+                showError('Server is not responding. Make sure app.py is running.');
+            }
+            
+            // Setup hold to talk button
+            setupHoldToTalk();
+        }
+        
+        function updateStatus(state, text) {
+            const status = document.getElementById('status');
+            status.className = `status ${state}`;
+            status.textContent = text || status.textContent;
+        }
+        
+        async function toggleRecording() {
+            if (holdToTalkActive) {
+                // Stop hold to talk if active
+                await stopHoldToTalk();
+            }
+            
+            if (!isRecording) {
+                await startRecording();
+            } else {
+                stopRecording();
+            }
+        }
+        
+        async function startRecording() {
+            try {
+                log('Requesting microphone access...');
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        sampleRate: 16000
+                    }
+                });
+                
+                log('Microphone access granted');
+                
+                // Determine supported mime type
+                let mimeType = 'audio/webm';
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    mimeType = 'audio/ogg';
+                    if (!MediaRecorder.isTypeSupported(mimeType)) {
+                        mimeType = '';  // Use default
+                        log('Using default audio format');
+                    }
+                }
+                log(`Using mime type: ${mimeType || 'default'}`);
+                
+                const options = mimeType ? { mimeType } : {};
+                mediaRecorder = new MediaRecorder(stream, options);
+                audioChunks = [];
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
+                };
+                
+                mediaRecorder.onstop = async () => {
+                    log(`Recording stopped. Chunks: ${audioChunks.length}`);
+                    const audioBlob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
+                    log(`Audio blob created: ${audioBlob.size} bytes, type: ${audioBlob.type}`);
+                    
+                    stream.getTracks().forEach(track => track.stop());
+                    await processAudio(audioBlob);
+                };
+                
+                mediaRecorder.onerror = (event) => {
+                    log(`Recorder error: ${event.error}`);
+                    showError('Recording error: ' + event.error);
+                };
+                
+                mediaRecorder.start();
+                isRecording = true;
+                updateRecordButton(true);
+                updateStatus('recording', 'Recording... Speak now');
+                log('Recording started');
+                
+            } catch (error) {
+                log(`Error starting recording: ${error.message}`);
+                showError('Microphone access denied or not available');
+            }
+        }
+        
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                log('Stopping recording...');
+                mediaRecorder.stop();
+                isRecording = false;
+                updateRecordButton(false);
+                updateStatus('processing', 'Processing audio...');
+            }
+        }
+        
+        // Hold to talk implementation
+        function setupHoldToTalk() {
+            const vadBtn = document.getElementById('vadBtn');
+            
+            // Prevent default drag behavior
+            vadBtn.addEventListener('dragstart', (e) => e.preventDefault());
+            vadBtn.addEventListener('selectstart', (e) => e.preventDefault());
+            
+            // Mouse events
+            vadBtn.addEventListener('mousedown', async (e) => {
+                if (e.button === 0) { // Left click only
+                    e.preventDefault();
+                    await startHoldToTalk();
+                }
+            });
+            
+            // Touch events for mobile
+            vadBtn.addEventListener('touchstart', async (e) => {
+                e.preventDefault();
+                await startHoldToTalk();
+            });
+            
+            // Stop on any release
+            const stopEvents = ['mouseup', 'mouseleave', 'touchend', 'touchcancel'];
+            stopEvents.forEach(event => {
+                vadBtn.addEventListener(event, async (e) => {
+                    if (holdToTalkActive) {
+                        e.preventDefault();
+                        await stopHoldToTalk();
+                    }
+                });
+            });
+            
+            // Global safety releases
+            document.addEventListener('mouseup', async () => {
+                if (holdToTalkActive) {
+                    log('Global mouseup - stopping hold to talk');
+                    await stopHoldToTalk();
+                }
+            });
+            
+            window.addEventListener('blur', async () => {
+                if (holdToTalkActive) {
+                    log('Window blur - stopping hold to talk');
+                    await stopHoldToTalk();
+                }
+            });
+        }
+        
+        async function startHoldToTalk() {
+            if (holdToTalkActive) {
+                log('Hold to talk already active');
+                return;
+            }
+            
+            // Stop regular recording if active
+            if (isRecording) {
+                stopRecording();
+            }
+            
+            try {
+                log('Starting hold to talk...');
+                holdToTalkActive = true;
+                holdToTalkStartTime = Date.now();
+                
+                // Get microphone
+                holdToTalkStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        sampleRate: 16000
+                    }
+                });
+                
+                // Setup recorder
+                let mimeType = 'audio/webm';
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    mimeType = 'audio/ogg';
+                    if (!MediaRecorder.isTypeSupported(mimeType)) {
+                        mimeType = '';
+                    }
+                }
+                
+                const options = mimeType ? { mimeType } : {};
+                holdToTalkRecorder = new MediaRecorder(holdToTalkStream, options);
+                holdToTalkChunks = [];
+                
+                holdToTalkRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        holdToTalkChunks.push(event.data);
+                    }
+                };
+                
+                holdToTalkRecorder.onstop = async () => {
+                    const duration = ((Date.now() - holdToTalkStartTime) / 1000).toFixed(1);
+                    log(`Hold to talk stopped after ${duration}s. Chunks: ${holdToTalkChunks.length}`);
+                    
+                    if (holdToTalkChunks.length > 0 && duration > 0.5) {
+                        const audioBlob = new Blob(holdToTalkChunks, { type: mimeType || 'audio/webm' });
+                        log(`Hold to talk audio: ${audioBlob.size} bytes`);
+                        
+                        // Clean up stream
+                        if (holdToTalkStream) {
+                            holdToTalkStream.getTracks().forEach(track => track.stop());
+                            holdToTalkStream = null;
+                        }
+                        
+                        // Process if we have meaningful audio
+                        if (audioBlob.size > 5000) { // At least 5KB
+                            await processAudio(audioBlob);
+                        } else {
+                            updateStatus('idle', 'Too short - try again');
+                            document.getElementById('vadInfo').textContent = 'Recording too short';
+                            setTimeout(() => {
+                                document.getElementById('vadInfo').textContent = '';
+                            }, 2000);
+                        }
+                    } else {
+                        updateStatus('idle', 'Ready to chat');
+                        // Clean up stream
+                        if (holdToTalkStream) {
+                            holdToTalkStream.getTracks().forEach(track => track.stop());
+                            holdToTalkStream = null;
+                        }
+                    }
+                    
+                    holdToTalkChunks = [];
+                };
+                
+                // Start recording with slight delay to ensure setup is complete
+                setTimeout(() => {
+                    if (holdToTalkRecorder && holdToTalkActive) {
+                        holdToTalkRecorder.start();
+                        updateHoldToTalkUI(true);
+                        updateStatus('listening', 'Hold to talk - Speak now');
+                        
+                        // Update timer display
+                        const startTime = Date.now();
+                        const updateTimer = setInterval(() => {
+                            if (holdToTalkActive) {
+                                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                                document.getElementById('vadInfo').textContent = `Recording: ${elapsed}s`;
+                            } else {
+                                clearInterval(updateTimer);
+                            }
+                        }, 100);
+                    }
+                }, 100);
+                
+            } catch (error) {
+                log(`Failed to start hold to talk: ${error.message}`);
+                holdToTalkActive = false;
+                showError('Failed to start recording: ' + error.message);
+            }
+        }
+        
+        async function stopHoldToTalk() {
+            if (!holdToTalkActive) {
+                return;
+            }
+            
+            log('Stopping hold to talk...');
+            holdToTalkActive = false;
+            
+            if (holdToTalkRecorder && holdToTalkRecorder.state === 'recording') {
+                holdToTalkRecorder.stop();
+                updateStatus('processing', 'Processing...');
+                document.getElementById('vadInfo').textContent = 'Processing...';
+            } else {
+                // Clean up if recorder wasn't started properly
+                if (holdToTalkStream) {
+                    holdToTalkStream.getTracks().forEach(track => track.stop());
+                    holdToTalkStream = null;
+                }
+                updateStatus('idle', 'Ready to chat');
+                document.getElementById('vadInfo').textContent = '';
+            }
+            
+            updateHoldToTalkUI(false);
+        }
+        
+        function updateHoldToTalkUI(active) {
+            const vadBtn = document.getElementById('vadBtn');
+            const vadIcon = document.getElementById('vadIcon');
+            const vadText = document.getElementById('vadText');
+            
+            if (active) {
+                vadBtn.classList.add('active');
+                vadIcon.textContent = '⏹️';
+                vadText.textContent = 'Release to Stop';
+            } else {
+                vadBtn.classList.remove('active');
+                vadIcon.textContent = '🎙️';
+                vadText.textContent = 'Hold to Talk';
+                setTimeout(() => {
+                    document.getElementById('vadInfo').textContent = '';
+                }, 3000);
+            }
+        }
+        
+        function updateRecordButton(recording) {
+            const btn = document.getElementById('recordBtn');
+            const icon = document.getElementById('recordIcon');
+            const text = document.getElementById('recordText');
+            
+            if (recording) {
+                btn.className = 'record-btn recording';
+                icon.textContent = '⏹️';
+                text.textContent = 'Stop Recording';
+            } else {
+                btn.className = 'record-btn';
+                icon.textContent = '🎤';
+                text.textContent = 'Start Recording';
+            }
+        }
+        
+        async function processAudio(audioBlob) {
+            try {
+                log(`Sending audio to server: ${audioBlob.size} bytes`);
+                
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'recording.webm');
+                
+                const response = await fetch('/api/speech-to-text', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                log(`STT response status: ${response.status}`);
+                
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(`STT failed (${response.status}): ${error}`);
+                }
+                
+                const data = await response.json();
+                log(`Transcription: "${data.text}"`);
+                
+                if (data.text) {
+                    addMessage(data.text, 'user');
+                    await processChat(data.text);
+                } else {
+                    updateStatus('idle', 'No speech detected');
+                    showError('No speech detected. Please try again.');
+                }
+                
+            } catch (error) {
+                log(`Error processing audio: ${error.message}`);
+                updateStatus('error', 'Error processing audio');
+                showError(`Error: ${error.message}`);
+            }
+        }
+        
+        async function sendText() {
+            const input = document.getElementById('textInput');
+            const text = input.value.trim();
+            
+            if (!text) return;
+            
+            log(`Sending text: "${text}"`);
+            input.value = '';
+            addMessage(text, 'user');
+            await processChat(text);
+        }
+        
+        async function processChat(text) {
+            try {
+                updateStatus('processing', 'Thinking...');
+                log(`Chat request: "${text}"`);
+                
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+                
+                log(`Chat response status: ${response.status}`);
+                
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(`Chat failed (${response.status}): ${error}`);
+                }
+                
+                const data = await response.json();
+                log(`AI response: "${data.response.substring(0, 100)}..."`);
+                
+                addMessage(data.response, 'ai');
+                updateStatus('idle', 'Ready');
+                
+                // Try text-to-speech (optional)
+                try {
+                    await playTextToSpeech(data.response);
+                } catch (ttsError) {
+                    log(`TTS error (non-critical): ${ttsError.message}`);
+                }
+                
+            } catch (error) {
+                log(`Chat error: ${error.message}`);
+                updateStatus('error', 'Chat error');
+                
+                if (error.message.includes('503') || error.message.includes('connect')) {
+                    showError('Cannot connect to LM Studio. Make sure it\'s running on port 1234.');
+                } else {
+                    showError(`Error: ${error.message}`);
+                }
+            }
+        }
+        
+        async function playTextToSpeech(text) {
+            try {
+                const response = await fetch('/api/text-to-speech', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+                
+                if (response.ok) {
+                    const audioBlob = await response.blob();
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    
+                    if (currentAudio) {
+                        currentAudio.pause();
+                    }
+                    
+                    currentAudio = new Audio(audioUrl);
+                    updateStatus('speaking', 'Speaking...');
+                    
+                    currentAudio.onended = () => {
+                        URL.revokeObjectURL(audioUrl);
+                        updateStatus('idle', 'Ready');
+                    };
+                    
+                    await currentAudio.play();
+                    log('TTS playback started');
+                }
+            } catch (error) {
+                // TTS is optional, don't show error to user
+                log(`TTS not available: ${error.message}`);
+            }
+        }
+        
+        function addMessage(text, type) {
+            const container = document.getElementById('chatContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}-message`;
+            messageDiv.textContent = text;
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.classList.add('show');
+            setTimeout(() => {
+                errorDiv.classList.remove('show');
+            }, 5000);
+        }
+        
+        // Handle Enter key
+        document.getElementById('textInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendText();
+            }
+        });
+        
+        // Initialize on load
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
